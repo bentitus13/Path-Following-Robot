@@ -5,6 +5,7 @@
 #include <Wifi.h>
 #include <Math.h>
 #include "Coordinate.h"
+#include "PID.h"
 
 #define MOTOR1_DIR 16
 #define MOTOR1_PWM 17
@@ -82,7 +83,7 @@ double G_Dt = 0.005;  // Integration time (DCM algorithm)  We will run the integ
 long gyroTimer = 0; //general purpose timer
 long gyroTimer1 = 0;
 
-double gyroGain = 0.008679; // gyros gain factor for 250deg/se
+double gyroGain = 0.008699; // gyros gain factor for 250deg/se
 double gyroZRawOld = 0.0;
 double gyroZAccel = 0.0; //gyro x val
 double gyroZVel = 0.0; //gyro cummulative z value
@@ -95,8 +96,15 @@ double minErr = 0.005;
 
 boolean gyroGood;
 
-double Kpr = 1; // Proportional control for rotating
+PID rotatePID;
+double Kpr = 3; // Proportional control for rotating
+double Kir = 0;
+double Kdr = 0;
+
+PID straightPID;
 double Kps = 1; // Proportional control for strait moving
+double Kis = 0;
+double Kds = 0;
 
 double robotAngle = 0.0;      // Angle needed to turn
 double currentAngle = 0.0;    // Current angle robot has turned
@@ -204,7 +212,7 @@ void gyroRead(L3G gyro) {
     // Serial.print(" gyroZVel: ");
     // Serial.print(gyroZVel);
     gyro.read(); // read gyro
-    gyroZAccel = (double)((gyro.g.z*ALPHA + (1-ALPHA)*gyroZRawOld) - gyroErr) * gyroGain*0.75;
+    gyroZAccel = (double)((gyro.g.z*ALPHA + (1-ALPHA)*gyroZRawOld) - gyroErr) * gyroGain*1.2 ;
     gyroZVel = gyroZAccel * G_Dt;
     if (abs(gyro.g.z) > minErr) {
         gyroZVel += gyroZPos;
@@ -212,26 +220,6 @@ void gyroRead(L3G gyro) {
     }
     gyroZRawOld = gyro.g.z;
     // }
-}
-
-boolean turn(int angle) {
-    gyroRead(gyro);
-
-    if (gyroZAccel< angle) {
-        robotDrive(153, -153);
-        return false;
-    }
-    robotDrive(0, 0);
-
-    //reset the gyro
-    //  curLTicks = lEncode;
-    //  curRTicks = rEncode;
-    //  tickLDiff = 0;
-    //  tickRDiff = 0;
-    gyroGood = false;
-    gyroZAccel= 0;
-    gyroZVel = 0;
-    return true;
 }
 
 void robotDrive(int motor1, int motor2) {
@@ -248,6 +236,9 @@ void pwmOut(uint8_t channel, uint32_t value, uint32_t valueMax = 255) {
 }
 
 void motorDrive(int motor, int spd) {
+    if (spd > 255) spd = 255;
+    if (spd < -255) spd = -255;
+
     boolean dir = true;
     if (spd < 0) {
         dir = false;
@@ -283,10 +274,26 @@ double findNextDistance(Coordinate node1, Coordinate node2) {
     return hypot((node1.x-node2.x),(node1.y-node2.y));
 }
 
+void rotateToAngle(double toAngle) {
+    robotAngle = toAngle;
+    currentAngle = gyroZPos;
+    while (robotAngle > 180) robotAngle -= 360;
+    while (robotAngle < -180) robotAngle += 360;
+
+    while (currentAngle > 180) currentAngle -= 360;
+    while (currentAngle < -180) currentAngle += 360;
+    
+    rotateRobot(rotatePID.calc(robotAngle, currentAngle));
+}
+
 void setup() {
-    while(millis()<3000);
+    while(millis()<2000);
     Serial.begin(115200);
     Wire.begin();
+
+    rotatePID.setpid(Kpr, Kir, Kdr);
+    straightPID.setpid(Kpr, Kir, Kdr);
+
     //Connect to the WiFi network
     // WiFi.softAP(ssid, pass);
 
@@ -325,7 +332,6 @@ void setup() {
     gyro.init();
     gyroGood = gyroSetup(gyro);
 
-
     Serial.println("Done initializing!");
 }
 
@@ -335,12 +341,7 @@ void loop() {
 
     // Every 20ms (50Hz)
     if (localTime % 4) {
-        if (gyroZPos < 90) {
-            rotateRobot(100);
-        } else {
-            Serial.print(" success! ");
-            straightRobot(0);
-        }
+        rotateToAngle(90);
 
         // switch (state) {
         //     case WAITING:
