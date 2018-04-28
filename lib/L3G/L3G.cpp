@@ -181,30 +181,37 @@ void L3G::read()
   // assert the MSB of the address to get the gyro
   // to do slave-transmit subaddress updating.
   Wire.write(OUT_X_L | (1 << 7));
-  Wire.endTransmission();
-  Wire.requestFrom(address, (byte)6);
+  last_status = Wire.endTransmission();
+  if (last_status != 0) {
+      Serial.print("Error: ");
+      Serial.println(last_status);
+      Wire.reset();
+  } else {
+      Serial.println("No error!");
+      Wire.requestFrom(address, (byte)6);
 
-  unsigned int millis_start = millis();
-  while (Wire.available() < 6)
-  {
-    if (io_timeout > 0 && ((unsigned int)millis() - millis_start) > io_timeout)
-    {
-      did_timeout = true;
-      return;
-    }
+      unsigned int millis_start = millis();
+      while (Wire.available() < 6)
+      {
+          if (io_timeout > 0 && ((unsigned int)millis() - millis_start) > io_timeout)
+          {
+              did_timeout = true;
+              return;
+          }
+      }
+
+      uint8_t xlg = Wire.read();
+      uint8_t xhg = Wire.read();
+      uint8_t ylg = Wire.read();
+      uint8_t yhg = Wire.read();
+      uint8_t zlg = Wire.read();
+      uint8_t zhg = Wire.read();
+
+      // combine high and low bytes
+      g.x = (int16_t)(xhg << 8 | xlg);
+      g.y = (int16_t)(yhg << 8 | ylg);
+      g.z = (int16_t)(zhg << 8 | zlg);
   }
-
-  uint8_t xlg = Wire.read();
-  uint8_t xhg = Wire.read();
-  uint8_t ylg = Wire.read();
-  uint8_t yhg = Wire.read();
-  uint8_t zlg = Wire.read();
-  uint8_t zhg = Wire.read();
-
-  // combine high and low bytes
-  g.x = (int16_t)(xhg << 8 | xlg);
-  g.y = (int16_t)(yhg << 8 | ylg);
-  g.z = (int16_t)(zhg << 8 | zlg);
 }
 
 void L3G::vector_normalize(vector<float> *a)

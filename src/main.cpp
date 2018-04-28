@@ -93,13 +93,14 @@ double gyroZVelOld = 0.0; //gyro cummulative z value
 double gyroZPosOld = 0.0;
 double gyroErr; // Gyro 7 error
 double minErr = 0.005;
+double gyroScale = 1.06;
 
 boolean gyroGood;
 
 PID rotatePID;
-double Kpr = 3; // Proportional control for rotating
-double Kir = 0;
-double Kdr = 0;
+double Kpr = 10; // Proportional control for rotating
+double Kir = 1;
+double Kdr = 3;
 
 PID straightPID;
 double Kps = 1; // Proportional control for strait moving
@@ -186,6 +187,10 @@ bool gyroSetup(L3G gyro) {
     delay(50);
     gyro.enableDefault(); // gyro init. default 250/deg/s
     delay(700);// allow time for gyro to settle
+    while (gyro.last_status != 0) {
+        gyro.read();
+        Serial.println("Waiting for gyro to realize it functions");
+    }
     for (int i = 0; i < 100; i++) { // takes 100 samples of the gyro
         gyro.read();
         gyroErr += gyro.g.z;
@@ -194,7 +199,7 @@ bool gyroSetup(L3G gyro) {
     gyroErr = gyroErr / 100;
     Serial.print("GyroErr: ");
     Serial.println(gyroErr);
-    minErr = gyroErr*1.4;
+    minErr = gyroErr*1.45;
     return true;
 }
 
@@ -212,7 +217,7 @@ void gyroRead(L3G gyro) {
     // Serial.print(" gyroZVel: ");
     // Serial.print(gyroZVel);
     gyro.read(); // read gyro
-    gyroZAccel = (double)((gyro.g.z*ALPHA + (1-ALPHA)*gyroZRawOld) - gyroErr) * gyroGain*1.2 ;
+    gyroZAccel = (double)((gyro.g.z*ALPHA + (1-ALPHA)*gyroZRawOld) - gyroErr) * gyroGain*gyroScale;
     gyroZVel = gyroZAccel * G_Dt;
     if (abs(gyro.g.z) > minErr) {
         gyroZVel += gyroZPos;
@@ -282,7 +287,7 @@ void rotateToAngle(double toAngle) {
 
     while (currentAngle > 180) currentAngle -= 360;
     while (currentAngle < -180) currentAngle += 360;
-    
+
     rotateRobot(rotatePID.calc(robotAngle, currentAngle));
 }
 
@@ -291,8 +296,8 @@ void setup() {
     Serial.begin(115200);
     Wire.begin();
 
-    rotatePID.setpid(Kpr, Kir, Kdr);
-    straightPID.setpid(Kpr, Kir, Kdr);
+    rotatePID.setpid(Kpr, Kir, Kdr, 50, 255);
+    straightPID.setpid(Kpr, Kir, Kdr, 200, 255);
 
     //Connect to the WiFi network
     // WiFi.softAP(ssid, pass);

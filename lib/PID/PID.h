@@ -20,6 +20,9 @@ double Kd;
 double setPoint;
 double prevError = 0;
 double sumError =0;
+double pastErrors[32];
+int pastErrorIndex;
+
 //set PID constants
 void setpid(double P, double I, double D, double sampleFreq, int max);
 //calculate the output control signal
