@@ -16,9 +16,9 @@
 #define MOTOR2_CHANNEL 1
 
 #define MOTOR1_ENC_YELLOW  4
-#define MOTOR1_ENC_WHITE   0
-#define MOTOR2_ENC_YELLOW 34
-#define MOTOR2_ENC_WHITE  35
+#define MOTOR1_ENC_WHITE   2
+#define MOTOR2_ENC_YELLOW 18
+#define MOTOR2_ENC_WHITE  19
 
 #define GYRO_SDA 21
 #define GYRO_SCL 22
@@ -28,8 +28,11 @@
 
 #define ALPHA 0.8
 
-#define TICKS_PER_ROT 3200 // Pololu website 50:1 37Dx54L mm with 64 CPR encoder
-#define WHEEL_CIRC 15.708 // 5" diameter wheels?
+#define TICKS_PER_ROT 3200.0 // Pololu website 50:1 37Dx54L mm with 64 CPR encoder
+#define WHEEL1_CIRC 10.86    // 3.458" diameter wheel (RIGHT)
+#define WHEEL2_CIRC 10.95    // 3.486" diameter wheel (LEFT)
+#define WHEEL_RATIO 0.992    // 10.86 / 10.95
+
 //Uncomment for debug information
 //#define debugPrints
 
@@ -111,9 +114,25 @@ double robotAngle = 0.0;      // Angle needed to turn
 double currentAngle = 0.0;    // Current angle robot has turned
 double distanceToNext = 0.0;  // Distance next node is from node
 double currentDistance = 0.0; // Current distance robot has traveled from node
+double prevDistance = 0.0;
+int destX = 0.0;
+int destY = 0.0;
+double currX = 0.0;
+double currY = 0.0;
+double prevX = 0.0;
+double prevY = 0.0;
+
+Coordinate curr;
+Coordinate next;
+
+int var = 0;
 
 double toDegrees(double rad) {
     return rad * M_PI * 180.0;
+}
+
+double toRadians(double deg) {
+    return deg / 180.0 / M_PI;
 }
 
 void IRAM_ATTR onTimer() {
@@ -122,70 +141,55 @@ void IRAM_ATTR onTimer() {
 
 void motor1WhiteISR() {
     if (digitalRead(MOTOR1_ENC_YELLOW)) {
-        portENTER_CRITICAL_ISR(&motor1Mux);
-        motor1Rot++;
-        portEXIT_CRITICAL_ISR(&motor1Mux);
-    } else {
-        portENTER_CRITICAL_ISR(&motor1Mux);
         motor1Rot--;
-        portEXIT_CRITICAL_ISR(&motor1Mux);
+    } else {
+        motor1Rot++;
     }
 }
 
 void motor1YellowISR() {
     if (digitalRead(MOTOR1_ENC_WHITE)) {
-        portENTER_CRITICAL_ISR(&motor1Mux);
-        motor1Rot--;
-        portEXIT_CRITICAL_ISR(&motor1Mux);
-    } else {
-        portENTER_CRITICAL_ISR(&motor1Mux);
         motor1Rot++;
-        portEXIT_CRITICAL_ISR(&motor1Mux);
+    } else {
+        motor1Rot--;
     }
 }
 
 void motor2WhiteISR() {
     if (digitalRead(MOTOR2_ENC_YELLOW)) {
-        portENTER_CRITICAL_ISR(&motor2Mux);
         motor2Rot++;
-        portEXIT_CRITICAL_ISR(&motor2Mux);
     } else {
-        portENTER_CRITICAL_ISR(&motor2Mux);
         motor2Rot--;
-        portEXIT_CRITICAL_ISR(&motor2Mux);
     }
 }
 
 void motor2YellowISR() {
     if (digitalRead(MOTOR2_ENC_WHITE)) {
-        portENTER_CRITICAL_ISR(&motor2Mux);
         motor2Rot--;
-        portEXIT_CRITICAL_ISR(&motor2Mux);
     } else {
-        portENTER_CRITICAL_ISR(&motor2Mux);
         motor2Rot++;
-        portEXIT_CRITICAL_ISR(&motor2Mux);
     }
 }
 
 double calcDist() {
-    portENTER_CRITICAL(&motor1Mux);
     long localMotor1Rot = motor1Rot;
-    portEXIT_CRITICAL(&motor1Mux);
 
-    portENTER_CRITICAL(&motor2Mux);
     long localMotor2Rot = motor2Rot;
-    portEXIT_CRITICAL(&motor2Mux);
 
-    long averageRot = localMotor1Rot/2 + localMotor2Rot/2;
+    double averageRot = (localMotor1Rot/2.0) * WHEEL1_CIRC + (localMotor2Rot/2.0) * WHEEL2_CIRC;
+    // Serial.print(" averageRot: ");
+    // Serial.println(averageRot / TICKS_PER_ROT);
+    return (averageRot / TICKS_PER_ROT); // might divide by 12
+}
 
-    return (averageRot / TICKS_PER_ROT) * WHEEL_CIRC; // might divide by 12
+double calcDisplacement() {
+    return hypot((currX - prevX), (currY - prevY));
 }
 
 //initializes the gyro
 bool gyroSetup(L3G gyro) {
     delay(50);
-    gyro.enableDefault(); // gyro init. default 250/deg/s
+    gyro.enableDefault(); // gyro init. default 250/deg/sx
     delay(700);// allow time for gyro to settle
     while (gyro.last_status != 0) {
         gyro.read();
@@ -227,6 +231,24 @@ void gyroRead(L3G gyro) {
     // }
 }
 
+void locationUpdate() {
+    currentDistance = calcDisplacement();
+    double dist = currentDistance - prevDistance;
+    currX += dist*cos(toRadians(gyroZPos)) - dist*sin(toRadians(gyroZPos));
+    // currY += dist*sin(toRadians(gyroZPos)) + dist*cos(toRadians(gyroZPos));
+    prevDistance = currentDistance;
+    Serial.print("motor1Rot: ");
+    Serial.print(motor1Rot);
+    Serial.print(" motor2Rot: ");
+    Serial.print(motor2Rot);
+    Serial.print(" curDist: ");
+    Serial.print(currentDistance);
+    Serial.print(" preDist: ");
+    Serial.print(prevDistance);
+    Serial.print(" dist: ");
+    Serial.println(dist);
+}
+
 void robotDrive(int motor1, int motor2) {
     motorDrive(0, motor1);
     motorDrive(1, motor2);
@@ -264,11 +286,11 @@ void motorDrive(int motor, int spd) {
 }
 
 void rotateRobot(double speed) {
-    robotDrive(speed,speed);
+    robotDrive(speed,speed*WHEEL_RATIO);
 }
 
 void straightRobot(double speed) {
-    robotDrive(speed,-speed);
+    robotDrive(speed,-speed*WHEEL_RATIO);
 }
 
 double findNextAngle(Coordinate node1, Coordinate node2) {
@@ -276,10 +298,24 @@ double findNextAngle(Coordinate node1, Coordinate node2) {
 }
 
 double findNextDistance(Coordinate node1, Coordinate node2) {
+    destX = node2.x;
+    destY = node2.y;
     return hypot((node1.x-node2.x),(node1.y-node2.y));
 }
 
-void rotateToAngle(double toAngle) {
+double driveToNext() {
+    distanceToNext = findNextDistance(curr, next);
+    prevX = currX;
+    prevY = currY;
+    double error = straightPID.calc(distanceToNext, currentDistance);
+    straightRobot(error);
+    // Serial.print("Distance: ");
+    // Serial.println(distanceToNext);
+
+    return straightPID.sumError;
+}
+
+double rotateToAngle(double toAngle) {
     robotAngle = toAngle;
     currentAngle = gyroZPos;
     while (robotAngle > 180) robotAngle -= 360;
@@ -288,19 +324,25 @@ void rotateToAngle(double toAngle) {
     while (currentAngle > 180) currentAngle -= 360;
     while (currentAngle < -180) currentAngle += 360;
 
-    rotateRobot(rotatePID.calc(robotAngle, currentAngle));
+    double error = rotatePID.calc(robotAngle, currentAngle);
+    rotateRobot(error);
+    return rotatePID.sumError;
 }
 
 void setup() {
     while(millis()<2000);
     Serial.begin(115200);
+    Wire.reset();
     Wire.begin();
 
     rotatePID.setpid(Kpr, Kir, Kdr, 50, 255);
-    straightPID.setpid(Kpr, Kir, Kdr, 200, 255);
+    straightPID.setpid(Kps, Kis, Kds, 200, 255);
 
     //Connect to the WiFi network
     // WiFi.softAP(ssid, pass);
+
+    curr.init(0,0,0);
+    next.init(5,0,0);
 
     Serial.println("Initialization!");
     // Serial.print("Connected to ");
@@ -338,15 +380,35 @@ void setup() {
     gyroGood = gyroSetup(gyro);
 
     Serial.println("Done initializing!");
+    // findNextDistance(curr, next);
 }
 
 void loop() {
     unsigned long localTime = timerCount;
 
-
     // Every 20ms (50Hz)
     if (localTime % 4) {
-        rotateToAngle(90);
+        // Serial.println(var);
+        double e;
+        // switch(var) {
+        //     case 0:
+        //     e = rotateToAngle(90);
+        //     if (e < 0.1) {
+        //         var = 1;
+        //         delay(100);
+        //     }
+        //     break;
+        //
+        //     case 1:
+        //     e = driveDistance(5);
+        //     if (e < 0.1) {
+        //         var = 0;
+        //     }
+        //     break;
+        // }
+        // Serial.println("Rotating!");
+        // rotateToAngle(90);
+        driveToNext();
 
         // switch (state) {
         //     case WAITING:
@@ -407,8 +469,9 @@ void loop() {
         // Serial.print(", motor2Rot: ");
         // Serial.println(motor2Rot);
         gyroRead(gyro);
-        Serial.print(" gyrozPos: ");
-        Serial.println(gyroZPos);
+        locationUpdate();
+        // Serial.print(" gyrozPos: ");
+        // Serial.println(gyroZPos);
         prevTime = localTime;
     }
 }

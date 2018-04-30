@@ -183,11 +183,11 @@ void L3G::read()
   Wire.write(OUT_X_L | (1 << 7));
   last_status = Wire.endTransmission();
   if (last_status != 0) {
-      Serial.print("Error: ");
-      Serial.println(last_status);
+      // Serial.print("Error: ");
+      // Serial.println(last_status);
       Wire.reset();
   } else {
-      Serial.println("No error!");
+      // Serial.println("No error!");
       Wire.requestFrom(address, (byte)6);
 
       unsigned int millis_start = millis();

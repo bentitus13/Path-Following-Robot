@@ -32,8 +32,8 @@ double PID::calc(double setVal, double curVal){
         sumError = 0;
     }
 
-    Serial.print("pastErrorIndex: ");
-    Serial.println(pastErrorIndex);
+    // Serial.print("pastErrorIndex: ");
+    // Serial.println(pastErrorIndex);
 
     pastErrorIndex = 31 & (pastErrorIndex + 1);
     double error = setPoint - curVal;
@@ -53,7 +53,7 @@ double PID::calc(double setVal, double curVal){
     pastErrors[pastErrorIndex] = error;
 
     // if (motorVal > 100) motorVal = 100;
-    Serial.println(motorVal);
+    // Serial.println(motorVal);
 
     return motorVal;
 }
